@@ -18,6 +18,14 @@ class TarStream(object):
     """
 
     def __init__(self, buf_size, root_dir):
+        """ Initializes a new TarStream object
+
+        `buf_size` is the maximum buffer size to use.
+        `root_dir` is the base directory for the fs items to add.
+                   All paths for added items are supposed to be relative to
+                   this one.
+        """
+
         self._tfile = tarfile.open(fileobj=BytesIO(), bufsize=buf_size,
                                    mode='w|')
         self._root = root_dir
@@ -28,13 +36,19 @@ class TarStream(object):
         self._size = 0
         self._finalized = False
         self._read_bytes = 0
+
         if hasattr(os, 'lstat'):
             self._stat = os.lstat
         else:
             self._stat = os.stat
 
     def close(self):
-        self._tfile.close()
+        if self._cur:
+            self._cur.close()
+            self._cur = None
+        if self._tfile:
+            self._tfile.close()
+            self._tfile = None
 
     def _get_padding(self, fsize):
         if fsize > 0:
@@ -45,35 +59,21 @@ class TarStream(object):
         return tarfile.BLOCKSIZE + fsize + self._get_padding(fsize)
 
     def add_item(self, path):
+        """ Add file system object specified in `path` to the tar file
+
+        `path` needs to be relative to the root directory passed on class
+        initialization
+        """
         fpath = os.path.join(self._root, path)
         fsize = 0
+
         if os.path.isfile(fpath):
             # If it is a file, we need to know the file size
             stat = self._stat(fpath)
             fsize = stat.st_size
+
         self._entries += [(path, fsize)]
         self._size += self._calc_size(fsize)
-
-    def _chain_next(self):
-        if self._cur:
-            self._cur.close()
-            self._cur = None
-
-        if self._chain:
-            self._cur = self._chain.pop(0)
-        elif self._entries:
-            name, size = self._entries.pop(0)
-            if name is None:
-                self._cur = BytesIO(size * tarfile.NUL)
-                self._chain = []
-            else:
-                path = os.path.join(self._root, name)
-                info = self._tfile.gettarinfo(path, name)
-                self._cur = BytesIO(info.tobuf())
-                if info.isreg():
-                    padding = self._get_padding(size)
-                    self._chain += [open(path, 'rb'),
-                                    BytesIO(padding * tarfile.NUL)]
 
     def finalize(self):
         if self._finalized:
@@ -132,3 +132,31 @@ class TarStream(object):
                 self._chain_next()
         self._read_bytes += len(buf)
         return buf
+
+    def _chain_next(self):
+
+        # if there's currently a file stream open we release it
+        if self._cur:
+            self._cur.close()
+            self._cur = None
+
+        if self._chain:
+            # Are there more file streams prepared? If so use them first.
+            self._cur = self._chain.pop(0)
+        elif self._entries:
+            # No more prepared streams, lets continue preparing.
+            name, size = self._entries.pop(0)
+            if name is None:
+                # We're at the end. Adding tarfile finalizer.
+                self._cur = BytesIO(size * tarfile.NUL)
+                self._chain = []
+            else:
+                # Create tar header stream, open file stream (if is file) and
+                # add a padding stream (for files only as well)
+                path = os.path.join(self._root, name)
+                info = self._tfile.gettarinfo(path, name)
+                self._cur = BytesIO(info.tobuf())
+                if info.isreg():
+                    padding = self._get_padding(size)
+                    self._chain += [open(path, 'rb'),
+                                    BytesIO(padding * tarfile.NUL)]
