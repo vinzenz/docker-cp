@@ -23,7 +23,6 @@ import tarfile
 
 from contextlib import closing
 from functools import wraps
-from io import BytesIO
 
 import docker
 import docker.errors
@@ -140,28 +139,32 @@ def copy_to_container(src, dst, buf_size=BUFFER_SIZE):
     Might raise UsageError, ItemNotFound, ContainerNotFound, OSError
     """
 
-    dst_container, dst_name, dst_path = _resolve_container(dst)
     if not os.path.exists(src):
         raise ItemNotFound("{0} could not be found.".format(src))
-    elif os.path.isfile(src):
-        tfile = tarfile.open(
-            fileobj=BytesIO(), mode='w|', bufsize=buf_size)
-        info = tfile.gettarinfo(name=src, arcname=os.path.basename(src))
-        header = info.tobuf()
-        tfile.close()
-        with open(src, 'rb') as f:
-            # Calculate necessary padding size.
-            padding_size = tarfile.BLOCKSIZE - (info.size % tarfile.BLOCKSIZE)
-            # Adding finalization indicator number of NULs.
-            padding_size += 2 * tarfile.BLOCKSIZE
-            # Create the padding + finalization buffer.
-            padding = padding_size * tarfile.NUL
-            # Initialize the tarstream.
-            tstream = TarStream(header, f, info.size, padding, buf_size)
-            # Actually perform the upload to docker.
+
+    dst_container, dst_name, dst_path = _resolve_container(dst)
+
+    src = os.path.normpath(src)
+    tstream = TarStream(buf_size, os.path.dirname(src))
+    with closing(tstream):
+        if os.path.isdir(src):
+            src_prefix = os.path.dirname(src)
+            for root, dirs, files in os.walk(src):
+                rel_root = os.path.relpath(root, src_prefix)
+                for name in dirs + files:
+                    item = os.path.join(rel_root, name)
+                    tstream.add_item(item)
+        else:
+            tstream.add_item(os.path.basename(src))
+
+        tstream.finalize()
+
+        try:
             dst_container.put_archive(dst_path, tstream)
-    else:
-        raise UsageError("Only files supported at this time")
+        except docker.errors.NotFound:
+            raise ItemNotFound(
+                '{0} in container {1} could not be found'.format(dst_path,
+                                                                 dst_name))
 
 
 def perform_copy(src, dst, buffer_length=None):
