@@ -36,6 +36,9 @@ BUFFER_SIZE = tarfile.RECORDSIZE
 
 
 def _checked_buffer_size(f):
+    """ This decorator is used to ensure that the passed buffer size is
+    always valid.
+    """
     @wraps(f)
     def fun(src, dst, buffer_size):
         if buffer_size <= 0:
@@ -110,14 +113,20 @@ def copy_from_container(src, dst, buf_size=BUFFER_SIZE):
                 # all other things can be done by the original implementation
                 if item.isreg():
                     if os.path.isfile(dst):
+                        # This is already a file on disc, so we will use it
                         target = dst
                     else:
+                        # We're assuming this to be a directory instead
                         target = os.path.join(dst, item.name)
+
+                    # Perform the actual copying
                     with open(target, 'wb') as dst_file:
+                        # Calculate the number of blocks and the size of the
+                        # last block (if not zero)
                         blocks, left = divmod(item.size, buf_size)
-                        for block in xrange(blocks):
+                        for _ in xrange(blocks):
                             tarfile.copyfileobj(a.fileobj, dst_file, buf_size)
-                        if left > 0:
+                        if left:
                             tarfile.copyfileobj(a.fileobj, dst_file, left)
                 else:
                     # Let tarfile handle other things than files
@@ -141,10 +150,15 @@ def copy_to_container(src, dst, buf_size=BUFFER_SIZE):
         header = info.tobuf()
         tfile.close()
         with open(src, 'rb') as f:
+            # Calculate necessary padding size.
             padding_size = tarfile.BLOCKSIZE - (info.size % tarfile.BLOCKSIZE)
+            # Adding finalization indicator number of NULs.
             padding_size += 2 * tarfile.BLOCKSIZE
+            # Create the padding + finalization buffer.
             padding = padding_size * tarfile.NUL
+            # Initialize the tarstream.
             tstream = TarStream(header, f, info.size, padding, buf_size)
+            # Actually perform the upload to docker.
             dst_container.put_archive(dst_path, tstream)
     else:
         raise UsageError("Only files supported at this time")
