@@ -22,7 +22,7 @@ import argparse
 import sys
 
 from .copy import BUFFER_SIZE, perform_copy
-from .error import UsageError
+from .error import ContainerNotFound, ItemNotFound, UsageError
 
 
 def main():
@@ -43,7 +43,8 @@ def main():
         perform_copy(args.source, args.dest, args.buffer_length)
     except UsageError as e:
         sys.stderr.write('ERROR: {0}\n\n'.format(e.message))
-        parser.print_help()
+        if not isinstance(e, (ItemNotFound, ContainerNotFound)):
+            parser.print_help()
         return 1
     return 0
 
