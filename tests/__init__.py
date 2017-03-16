@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #
 # Copyright 2017-present Vinzenz Feenstra
 # Copyright 2017-present Red Hat, Inc. and/or its affiliates.
@@ -16,13 +17,3 @@
 #
 # Refer to the README and COPYING files for full details of the license.
 #
-init:
-	pip install -r requirements.txt
-
-install:
-	pip install .
-
-test:
-	PYTHONPATH=$(PYTHONPATH):$(PWD) python -m unittest discover
-
-.PHONY: init test

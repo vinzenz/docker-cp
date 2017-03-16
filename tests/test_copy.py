@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #
 # Copyright 2017-present Vinzenz Feenstra
 # Copyright 2017-present Red Hat, Inc. and/or its affiliates.
@@ -16,13 +17,17 @@
 #
 # Refer to the README and COPYING files for full details of the license.
 #
-init:
-	pip install -r requirements.txt
+import unittest
 
-install:
-	pip install .
+from docker_copy.copy import BUFFER_SIZE, _checked_buffer_size
 
-test:
-	PYTHONPATH=$(PYTHONPATH):$(PWD) python -m unittest discover
 
-.PHONY: init test
+class TestCopy(unittest.TestCase):
+
+    def test_checked_buffer_size(self):
+        @_checked_buffer_size
+        def fun(src, dst, size):
+            self.assertEqual(size, BUFFER_SIZE)
+
+if __name__ == '__main__':
+    unittest.main()
