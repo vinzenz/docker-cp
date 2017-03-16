@@ -7,11 +7,12 @@ from io import BytesIO
 
 class TarStream(object):
     """ Implements a file like object for uploading a file in tar archive
-    format to a docker container via the docker API. The whole thing by using
-    a fixed size buffer for the file upload.
+    format, to a docker container via the docker library.
+    This is implemented by using a fixed size buffer to avoid memory usage
+    spikes.
 
-    This class is specialized on the usecase and the file API only returns
-    what is necessary to fulfil requests needs on the API.
+    Cauton: This class is specialized on the usecase and the file API only
+    returns what is necessary to fullfil `requests` needs on the API.
     """
 
     def __init__(self, header, stream, ssize, padding, block_size):
@@ -27,7 +28,7 @@ class TarStream(object):
         return self._size
 
     def seek(self, off, direction):
-        """ Won't do anything since requests would just jump to the end and
+        """ Won't do anything since `requests` would just jump to the end and
         the start to get the size of the file like object
         """
         return
@@ -50,14 +51,16 @@ class TarStream(object):
         buf = bytes()
 
         # Explanation of the following loop:
-        # While there is not enough and the chain is not empty read 0 to
-        # block_size bytes from the first element in the chain.
+        # While there is not enough data in buf and the chain is not empty,
+        # read 0 to block_size bytes from the first element in the chain.
         # When the the element hit the end, pop it from the list and continue
         # unless the list is empty which will break the loop and we'll exit
+
         while len(buf) < self._block_size and self._chain:
             rsize = self._block_size - len(buf)
             rbuf = self._chain[0].read(rsize)
             buf += rbuf
             if len(rbuf) < rsize:
+                self._chain[0].close()
                 self._chain.pop(0)
         return buf

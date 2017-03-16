@@ -5,6 +5,7 @@ import os.path
 import tarfile
 
 from contextlib import closing
+from functools import wraps
 from io import BytesIO
 
 import docker
@@ -15,6 +16,15 @@ from .error import ContainerNotFound, InvalidContainerSpec, ItemNotFound, \
 from .tarstream import TarStream
 
 BUFFER_SIZE = tarfile.RECORDSIZE
+
+
+def _checked_buffer_size(f):
+    @wraps(f)
+    def fun(src, dst, buffer_size):
+        if buffer_size <= 0:
+            buffer_size = BUFFER_SIZE
+        return f(src, dst, buffer_size)
+    return fun
 
 
 def _resolve_container(spec):
@@ -48,10 +58,11 @@ def _get_archive(container, name, path):
                            'container "{1}"'.format(path, name))
 
 
-def copy_to_and_from_container(src, dst, buf_size=BUFFER_SIZE):
+@_checked_buffer_size
+def copy_from_and_to_container(src, dst, buf_size=BUFFER_SIZE):
     """ Copies files/folders from the source container to the target container.
 
-    Might raise UsageError, ItemNotFound and ContainerNotFound
+    Might raise UsageError, ItemNotFound, ContainerNotFound
     """
 
     src_container, src_name, src_path = _resolve_container(src)
@@ -62,11 +73,12 @@ def copy_to_and_from_container(src, dst, buf_size=BUFFER_SIZE):
         dst_container.put_archive(dst_path, src_archive)
 
 
+@_checked_buffer_size
 def copy_from_container(src, dst, buf_size=BUFFER_SIZE):
     """ Copies a file/directory from the container and location specified in
     src to the directory location specified in dst
 
-    Might raise UsageError, ItemNotFound and ContainerNotFound
+    Might raise UsageError, ItemNotFound, ContainerNotFound, OSError
     """
 
     src_container, src_name, src_path = _resolve_container(src)
@@ -95,26 +107,27 @@ def copy_from_container(src, dst, buf_size=BUFFER_SIZE):
                     a.extract(item, dst)
 
 
+@_checked_buffer_size
 def copy_to_container(src, dst, buf_size=BUFFER_SIZE):
     """ Copies a file from src to the container and location specified in dst
 
-    Might raise UsageError, ItemNotFound and ContainerNotFound
+    Might raise UsageError, ItemNotFound, ContainerNotFound, OSError
     """
 
     dst_container, dst_name, dst_path = _resolve_container(dst)
-    if os.path.isfile(src):
+    if not os.path.exists(src):
+        raise ItemNotFound("{0} could not be found.".format(src))
+    elif os.path.isfile(src):
         tfile = tarfile.open(
             fileobj=BytesIO(), mode='w|', bufsize=buf_size)
         info = tfile.gettarinfo(name=src, arcname=os.path.basename(src))
         header = info.tobuf()
         tfile.close()
-        fstat = os.stat(src)
         with open(src, 'rb') as f:
-            size = fstat.size
-            padding_size = tarfile.BLOCKSIZE - (size % tarfile.BLOCKSIZE)
+            padding_size = tarfile.BLOCKSIZE - (info.size % tarfile.BLOCKSIZE)
             padding_size += 2 * tarfile.BLOCKSIZE
             padding = padding_size * tarfile.NUL
-            tstream = TarStream(header, f, size, padding, buf_size)
+            tstream = TarStream(header, f, info.size, padding, buf_size)
             dst_container.put_archive(dst_path, tstream)
     else:
         raise UsageError("Only files supported at this time")
@@ -126,17 +139,17 @@ def perform_copy(src, dst, buffer_length=None):
 
     Might raise UsageError, ItemNotFound and ContainerNotFound
     """
-    f = None
+    implementation = None
     if ':' in src and ':' in dst:
-        f = copy_to_and_from_container
+        implementation = copy_from_and_to_container
     elif ':' in src:
-        f = copy_from_container
+        implementation = copy_from_container
     elif ':' in dst:
-        f = copy_to_container
+        implementation = copy_to_container
     else:
         raise UsageError('Neither source nor destination is a container.')
 
     print('Copying from {0} to {1} with buffer size {2}'
           .format(src, dst, buffer_length or 'N/A'))
 
-    f(src, dst, buffer_length or BUFFER_SIZE)
+    implementation(src, dst, buffer_length or BUFFER_SIZE)

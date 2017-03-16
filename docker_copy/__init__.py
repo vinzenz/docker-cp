@@ -5,7 +5,7 @@ import argparse
 import sys
 
 from .copy import BUFFER_SIZE, perform_copy
-from .errors import UsageError
+from .error import UsageError
 
 
 def main():
