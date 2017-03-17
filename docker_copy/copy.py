@@ -19,6 +19,7 @@
 #
 import os
 import os.path
+import sys
 import tarfile
 
 from contextlib import closing
@@ -39,7 +40,7 @@ def _checked_buffer_size(f):
     always valid.
     """
     @wraps(f)
-    def fun(src, dst, buffer_size):
+    def fun(src, dst, buffer_size=BUFFER_SIZE):
         if buffer_size <= 0:
             buffer_size = BUFFER_SIZE
         return f(src, dst, buffer_size)
@@ -77,6 +78,28 @@ def _get_archive(container, name, path):
                            'container "{1}"'.format(path, name))
 
 
+def _put_archive(container, name, path, stream):
+    try:
+        container.put_archive(path, stream)
+    except docker.errors.NotFound:
+        raise ItemNotFound(
+            '{0} in container {1} could not be found'.format(path, name))
+
+
+@_checked_buffer_size
+def copy_to_stdout(src, _, buf_size=BUFFER_SIZE):
+    src_container, src_name, src_path = _resolve_container(src)
+    src_archive, src_meta = _get_archive(src_container, src_name, src_path)
+    with closing(src_archive):
+        tarfile.copyfileobj(src_archive, sys.stdout)
+
+
+@_checked_buffer_size
+def copy_from_stdout(_, dst, bufsize=BUFFER_SIZE):
+    dst_container, dst_name, dst_path = _resolve_container(dst)
+    _put_archive(dst_container, dst_name, dst_path, sys.stdin)
+
+
 @_checked_buffer_size
 def copy_from_and_to_container(src, dst, buf_size=BUFFER_SIZE):
     """ Copies files/folders from the source container to the target container.
@@ -89,7 +112,7 @@ def copy_from_and_to_container(src, dst, buf_size=BUFFER_SIZE):
 
     src_archive, src_meta = _get_archive(src_container, src_name, src_path)
     with closing(src_archive):
-        dst_container.put_archive(dst_path, src_archive)
+        _put_archive(dst_container, dst_name, dst_path, src_archive)
 
 
 @_checked_buffer_size
@@ -158,13 +181,7 @@ def copy_to_container(src, dst, buf_size=BUFFER_SIZE):
             tstream.add_item(os.path.basename(src))
 
         tstream.finalize()
-
-        try:
-            dst_container.put_archive(dst_path, tstream)
-        except docker.errors.NotFound:
-            raise ItemNotFound(
-                '{0} in container {1} could not be found'.format(dst_path,
-                                                                 dst_name))
+        _put_archive(dst_container, dst_name, dst_path, tstream)
 
 
 def perform_copy(src, dst, buffer_length=None):
@@ -174,7 +191,11 @@ def perform_copy(src, dst, buffer_length=None):
     Might raise UsageError, ItemNotFound and ContainerNotFound
     """
     implementation = None
-    if ':' in src and ':' in dst:
+    if src is '-' and dst is not '-':
+        implementation = copy_from_stdout
+    elif dst is '-' and src is not '-':
+        implementation = copy_to_stdout
+    elif ':' in src and ':' in dst:
         implementation = copy_from_and_to_container
     elif ':' in src:
         implementation = copy_from_container
@@ -183,7 +204,7 @@ def perform_copy(src, dst, buffer_length=None):
     else:
         raise UsageError('Neither source nor destination is a container.')
 
-    print('Copying from {0} to {1} with buffer size {2}'
-          .format(src, dst, buffer_length or 'N/A'))
+    sys.stderr.write('Copying from {0} to {1} with buffer size {2}\n'
+                     .format(src, dst, buffer_length or 'N/A'))
 
     implementation(src, dst, buffer_length or BUFFER_SIZE)
