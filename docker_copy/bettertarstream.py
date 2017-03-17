@@ -13,7 +13,7 @@ class BetterTarStream(object):
     spikes. The maximum overhead of this class is 1024 bytes for the tar
     archive format.
 
-    Cauton: This class is specialized on the usecase and the file API only
+    Caution: This class is specialized on the usecase and the file API only
     returns what is necessary to fullfil `requests` needs on the API.
     """
 

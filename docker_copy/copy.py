@@ -28,9 +28,9 @@ from functools import wraps
 import docker
 import docker.errors
 
+from .bettertarstream import BetterTarStream
 from .error import ContainerNotFound, InvalidContainerSpec, ItemNotFound, \
     UsageError
-from .tarstream import TarStream
 
 BUFFER_SIZE = tarfile.RECORDSIZE
 
@@ -166,22 +166,8 @@ def copy_to_container(src, dst, buf_size=BUFFER_SIZE):
         raise ItemNotFound("{0} could not be found.".format(src))
 
     dst_container, dst_name, dst_path = _resolve_container(dst)
-
-    src = os.path.normpath(src)
-    tstream = TarStream(buf_size, os.path.dirname(src))
-    with closing(tstream):
-        if os.path.isdir(src):
-            src_prefix = os.path.dirname(src)
-            for root, dirs, files in os.walk(src):
-                rel_root = os.path.relpath(root, src_prefix)
-                for name in dirs + files:
-                    item = os.path.join(rel_root, name)
-                    tstream.add_item(item)
-        else:
-            tstream.add_item(os.path.basename(src))
-
-        tstream.finalize()
-        _put_archive(dst_container, dst_name, dst_path, tstream)
+    _put_archive(dst_container, dst_name, dst_path,
+                 BetterTarStream(buf_size, os.path.normpath(src)))
 
 
 def perform_copy(src, dst, buffer_length=None):
