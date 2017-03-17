@@ -64,8 +64,7 @@ class TarStream(object):
 
     def _streams(self):
         """ Generator that creates streams representing the tar format """
-        tfile = tarfile.open(fileobj=BytesIO(), bufsize=self._buf_size,
-                             mode='w|')
+        tfile = tarfile.open(fileobj=BytesIO(), mode='w|')
         with closing(tfile):
             for path, arcname in self._items():
                 info = tfile.gettarinfo(path, arcname)
