@@ -3,15 +3,13 @@
 import os
 import tarfile
 
+from contextlib import closing
 from io import BytesIO
 
 
 class BetterTarStream(object):
-    """ Implements a file like object for uploading a file in tar archive
-    format, to a docker container via the docker library.
-    This is implemented by using a fixed size buffer to avoid memory usage
-    spikes. The maximum overhead of this class is 1024 bytes for the tar
-    archive format.
+    """ Implements a tar stream from a path specified, providing at most
+    `buf_size` big chunks.
 
     Caution: This class is specialized on the usecase and the file API only
     returns what is necessary to fullfil `requests` needs on the API.
@@ -37,6 +35,10 @@ class BetterTarStream(object):
         return next(self._iterator)
 
     def _items(self):
+        """ Generator to iterate over all files and folders to be added to
+        the tar archive
+        """
+        # Handle the case of one file only
         if os.path.isfile(self._path):
             yield self._path, os.path.basename(self._path)
         else:
@@ -49,6 +51,9 @@ class BetterTarStream(object):
                     yield os.path.join(src_prefix, item), item
 
     def _inner_next(self):
+        """ Generator that iterates over all streams and yields buffer chunks
+        in the size of the buf_size parameter
+        """
         for stream in self._streams():
             while True:
                 buf = stream.read(self._buf_size)
@@ -59,22 +64,25 @@ class BetterTarStream(object):
         yield bytes()
 
     def _streams(self):
-
+        """ Generator that creates streams representing the tar format """
         tfile = tarfile.open(fileobj=BytesIO(), bufsize=self._buf_size,
                              mode='w|')
-        for path, arcname in self._items():
-            info = tfile.gettarinfo(path, arcname)
-            yield BytesIO(info.tobuf())
+        with closing(tfile):
+            for path, arcname in self._items():
+                info = tfile.gettarinfo(path, arcname)
+                # Yield the header as a stream
+                yield BytesIO(info.tobuf())
 
-            if info.isreg():
-                yield open(path, 'rb')
+                if info.isreg():
+                    # Yield the file stream
+                    yield open(path, 'rb')
 
-            padding = info.size % tarfile.BLOCKSIZE
-            if padding:
-                padding = tarfile.BLOCKSIZE - padding
-            if padding:
-                yield BytesIO(padding * tarfile.NUL)
+                padding = info.size % tarfile.BLOCKSIZE
+                if padding:
+                    padding = tarfile.BLOCKSIZE - padding
+                if padding:
+                    # Yield the padding as a stream if necessary
+                    yield BytesIO(padding * tarfile.NUL)
 
+        # Yield the tar finalization marker
         yield BytesIO((tarfile.BLOCKSIZE * 2) * tarfile.NUL)
-
-        tfile.close()
