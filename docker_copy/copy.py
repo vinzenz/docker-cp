@@ -28,9 +28,10 @@ from functools import wraps
 import docker
 import docker.errors
 
-from .bettertarstream import BetterTarStream
 from .error import ContainerNotFound, InvalidContainerSpec, ItemNotFound, \
     UsageError
+from .tarstream import TarStream
+
 
 BUFFER_SIZE = tarfile.RECORDSIZE
 
@@ -167,7 +168,7 @@ def copy_to_container(src, dst, buf_size=BUFFER_SIZE):
 
     dst_container, dst_name, dst_path = _resolve_container(dst)
     _put_archive(dst_container, dst_name, dst_path,
-                 BetterTarStream(buf_size, os.path.normpath(src)))
+                 TarStream(buf_size, os.path.normpath(src)))
 
 
 def perform_copy(src, dst, buffer_length=None):

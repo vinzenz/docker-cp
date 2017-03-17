@@ -7,7 +7,7 @@ from contextlib import closing
 from io import BytesIO
 
 
-class BetterTarStream(object):
+class TarStream(object):
     """ Implements a tar stream from a path specified, providing at most
     `buf_size` big chunks.
 
