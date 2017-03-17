@@ -55,13 +55,12 @@ class BetterTarStream(object):
         in the size of the buf_size parameter
         """
         for stream in self._streams():
-            while True:
-                buf = stream.read(self._buf_size)
-                if not buf:
-                    stream.close()
-                    break
-                yield buf
-        yield bytes()
+            with closing(stream):
+                while True:
+                    buf = stream.read(self._buf_size)
+                    if not buf:
+                        break
+                    yield buf
 
     def _streams(self):
         """ Generator that creates streams representing the tar format """
