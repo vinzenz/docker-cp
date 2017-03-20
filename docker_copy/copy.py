@@ -147,7 +147,7 @@ def copy_from_container(src, dst, buf_size=BUFFER_SIZE):
                         # Calculate the number of blocks and the size of the
                         # last block (if not zero)
                         blocks, left = divmod(item.size, buf_size)
-                        for _ in xrange(blocks):
+                        for _ in range(blocks):
                             tarfile.copyfileobj(a.fileobj, dst_file, buf_size)
                         if left:
                             tarfile.copyfileobj(a.fileobj, dst_file, left)
